@@ -171,6 +171,7 @@
     <ClCompile Include="src\Statement.cpp" />
     <ClCompile Include="src\Transaction.cpp" />
     <ClCompile Include="stdafx.cpp" />
+    <ClCompile Include="Thread.cpp" />
     <ClCompile Include="UseSqlite3Lib.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

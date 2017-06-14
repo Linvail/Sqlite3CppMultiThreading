@@ -110,12 +110,19 @@ void runSingleCore()
 	std::cout << "[" << __FUNCTION__ << "]" << "Time difference = " << elapsedInMiliSecs << std::endl;
 }
 
+void mergeDb();
+
 void runMultiThreads()
 {
 	shared_ptr<SQLite::Database> readonlyDb(new SQLite::Database("MyDb.db", SQLite::OPEN_READONLY));
 	shared_ptr<MyTable> readonlyMyTable(new MyTable(readonlyDb));
 
 	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+
+	DeleteFileA("db_temp1");
+	DeleteFileA("db_temp2");
+	DeleteFileA("db_temp3");
+	DeleteFileA("db_temp4");
 
 	// Spawn 4 threads.
 	thread worker1(readonlyMyTable, "db_temp1");
@@ -133,6 +140,8 @@ void runMultiThreads()
 	worker3.wait();
 	worker4.wait();
 
+	mergeDb();
+
 	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 	int elapsedInMiliSecs = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count();
 	std::cout << "[" << __FUNCTION__ << "]" << "Time difference = " << elapsedInMiliSecs << std::endl;
@@ -142,7 +151,7 @@ void mergeDb()
 {
 	DeleteFileA("MyDb_temp.db");
 
-	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+	//std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
 	shared_ptr<SQLite::Database> writeDb(new SQLite::Database("MyDb_temp.db", SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE));
 	SQLite::Statement createtable(*writeDb, "CREATE TABLE IF NOT EXISTS ResultTable (id INTEGER PRIMARY KEY, value STRING);");
@@ -157,31 +166,94 @@ void mergeDb()
 	SQLite::Statement attach4(*writeDb, "ATTACH DATABASE db_temp4 AS db4;");
 	attach4.exec();
 
-	SQLite::Statement mergeStat(*writeDb, "insert into ResultTable(id, value) select id, value from \
-		  ( select id, value from db1.ResultTable \
-		    union all \
-	        select id, value from db2.ResultTable \
-		    union all \
-	        select id, value from db3.ResultTable \
-		    union all \
-	        select id, value from db4.ResultTable )"
-	);
+	//SQLite::Statement mergeStat
+	//	( *writeDb, "insert into ResultTable(id, value) select id, value from \
+	//	    ( select id, value from db1.ResultTable \
+	//	    union all \
+	//        select id, value from db2.ResultTable \
+	//	    union all \
+	//        select id, value from db3.ResultTable \
+	//	    union all \
+	//        select id, value from db4.ResultTable )"
+	//	);
+
+	SQLite::Statement mergeStat
+		(
+		*writeDb, "INSERT INTO ResultTable SELECT * FROM db1.ResultTable UNION ALL \
+			SELECT * FROM db2.ResultTable UNION ALL \
+			SELECT * FROM db3.ResultTable UNION ALL \
+			SELECT * FROM db4.ResultTable;"
+		);
 
 	mergeStat.exec();
+
+	//std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+	//int elapsedInMiliSecs = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count();
+	//std::cout << "[" << __FUNCTION__ << "]" << "Time difference = " << elapsedInMiliSecs << std::endl;
+}
+
+void runMultiThreadsInMemoryDb()
+{
+	shared_ptr<SQLite::Database> readonlyDb(new SQLite::Database("MyDb.db", SQLite::OPEN_READONLY));
+	shared_ptr<MyTable> readonlyMyTable(new MyTable(readonlyDb));
+
+	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+
+	// Spawn 4 threads.
+	thread worker1(readonlyMyTable, ":memory:");
+	thread worker2(readonlyMyTable, ":memory:");
+	thread worker3(readonlyMyTable, ":memory:");
+	thread worker4(readonlyMyTable, ":memory:");
+
+	worker1.start();
+	worker2.start();
+	worker3.start();
+	worker4.start();
+
+	worker1.wait();
+	worker2.wait();
+	worker3.wait();
+	worker4.wait();
+
+	// Merge db here...
+	DeleteFileA("MyDb_temp.db");
+	shared_ptr<SQLite::Database> writeDb(new SQLite::Database("MyDb_temp.db", SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE));
+	SQLite::Statement createtable(*writeDb, "CREATE TABLE IF NOT EXISTS ResultTable (id INTEGER PRIMARY KEY, value STRING);");
+	createtable.exec();
+
+	worker1.m_Worker->m_DestinationDb->exec("ATTACH DATABASE \'MyDb_temp.db\' AS target;");
+	worker1.m_Worker->m_DestinationDb->exec("INSERT INTO target.ResultTable SELECT * FROM ResultTable;");
+	worker1.m_Worker->m_DestinationDb->exec("DETACH DATABASE target;");
+
+	worker2.m_Worker->m_DestinationDb->exec("ATTACH DATABASE \'MyDb_temp.db\' AS target;");
+	worker2.m_Worker->m_DestinationDb->exec("INSERT INTO target.ResultTable SELECT * FROM ResultTable;");
+	worker2.m_Worker->m_DestinationDb->exec("DETACH DATABASE target;");
+
+	worker3.m_Worker->m_DestinationDb->exec("ATTACH DATABASE \'MyDb_temp.db\' AS target;");
+	worker3.m_Worker->m_DestinationDb->exec("INSERT INTO target.ResultTable SELECT * FROM ResultTable;");
+	worker3.m_Worker->m_DestinationDb->exec("DETACH DATABASE target;");
+
+	worker4.m_Worker->m_DestinationDb->exec("ATTACH DATABASE \'MyDb_temp.db\' AS target;");
+	worker4.m_Worker->m_DestinationDb->exec("INSERT INTO target.ResultTable SELECT * FROM ResultTable;");
+	worker4.m_Worker->m_DestinationDb->exec("DETACH DATABASE target;");
 
 	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 	int elapsedInMiliSecs = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count();
 	std::cout << "[" << __FUNCTION__ << "]" << "Time difference = " << elapsedInMiliSecs << std::endl;
 }
 
+
 int main()
 {
-	AddDummyData(1000000);
+	//AddDummyData(500000);
 
-	runSingleCore();
+	//runSingleCore();
 
-	runMultiThreads();
-	mergeDb();
+	//runMultiThreads();
+
+	runMultiThreadsInMemoryDb();
+
+	system("pause");
 
 	return 0;
 }
